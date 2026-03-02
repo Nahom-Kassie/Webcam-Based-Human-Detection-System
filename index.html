@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Real-Time Human Resemblance</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+    <style>
+      body {
+        font-family: "Segoe UI", sans-serif;
+        background: #0b0e14;
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        margin: 0;
+      }
+      .wrapper {
+        text-align: center;
+        background: #1a1f2b;
+        padding: 2rem;
+        border-radius: 20px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        border: 1px solid #30363d;
+      }
+
+      #video-container {
+        position: relative;
+        width: 640px;
+        height: 480px;
+        background: #000;
+        border-radius: 12px;
+        overflow: hidden;
+        margin: 20px 0;
+        border: 2px solid #30363d;
+      }
+      video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+      }
+
+      .stats-box {
+        margin-top: 20px;
+      }
+      .label {
+        font-size: 0.9rem;
+        color: #8b949e;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .percentage {
+        font-size: 5rem;
+        font-weight: 800;
+        color: #58a6ff;
+        margin: 10px 0;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .progress-container {
+        background: #30363d;
+        height: 12px;
+        width: 100%;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      #progress-bar {
+        height: 100%;
+        width: 0%;
+        background: #58a6ff;
+        transition:
+          width 0.1s ease-out,
+          background 0.3s;
+      }
+
+      button {
+        background: #238636;
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        font-size: 1.1rem;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: 0.2s;
+        margin-bottom: 10px;
+      }
+      button:hover {
+        background: #2ea043;
+        transform: scale(1.05);
+      }
+      button:disabled {
+        background: #30363d;
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      #status {
+        font-family: monospace;
+        font-size: 0.8rem;
+        color: #8b949e;
+        margin-top: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <h2>AI Human-o-Meter</h2>
+
+      <button id="start-btn">ENABLE CAMERA & START AI</button>
+
+      <div id="video-container">
+        <video id="webcam" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+      </div>
+
+      <div class="stats-box">
+        <div class="label">Human Resemblance Detected</div>
+        <div id="percentage-text" class="percentage">0%</div>
+        <div class="progress-container">
+          <div id="progress-bar"></div>
+        </div>
+        <div id="status">Waiting for user input...</div>
+      </div>
+    </div>
+
+    <script>
+      const video = document.getElementById("webcam");
+      const canvas = document.getElementById("overlay");
+      const ctx = canvas.getContext("2d");
+      const startBtn = document.getElementById("start-btn");
+      const status = document.getElementById("status");
+      const percentText = document.getElementById("percentage-text");
+      const progressBar = document.getElementById("progress-bar");
+
+      let model = undefined;
+
+      startBtn.addEventListener("click", async () => {
+        startBtn.disabled = true;
+        status.innerText = "Initializing Camera...";
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+          });
+          video.srcObject = stream;
+
+          await video.play();
+
+          status.innerText = "Loading AI Model (Neural Network)...";
+          model = await cocoSsd.load();
+
+          status.innerText = "AI System Active. Analyzing...";
+          startBtn.style.display = "none";
+
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+
+          detectFrame();
+        } catch (err) {
+          status.innerText = "Error: " + err.message;
+          startBtn.disabled = false;
+        }
+      });
+
+      async function detectFrame() {
+        const predictions = await model.detect(video);
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        let maxScore = 0;
+        let humanFound = false;
+
+        predictions.forEach((p) => {
+          if (p.class === "person") {
+            humanFound = true;
+            if (p.score > maxScore) maxScore = p.score;
+
+            const [x, y, w, h] = p.bbox;
+            ctx.strokeStyle = "#58a6ff";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x, y, w, h);
+          }
+        });
+
+        updateUI(maxScore);
+
+        console.log(
+          "AI Scanning... Persons Found:",
+          predictions.filter((p) => p.class === "person").length,
+        );
+
+        requestAnimationFrame(detectFrame);
+      }
+
+      function updateUI(score) {
+        const percent = Math.round(score * 100);
+        percentText.innerText = percent + "%";
+        progressBar.style.width = percent + "%";
+
+        if (percent > 85) {
+          percentText.style.color = "#3fb950";
+          progressBar.style.background = "#3fb950";
+        } else if (percent > 40) {
+          percentText.style.color = "#d29922";
+          progressBar.style.background = "#d29922";
+        } else {
+          percentText.style.color = "#f85149";
+          progressBar.style.background = "#f85149";
+        }
+      }
+    </script>
+  </body>
+</html>
